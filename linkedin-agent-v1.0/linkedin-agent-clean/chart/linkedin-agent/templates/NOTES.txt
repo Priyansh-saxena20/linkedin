@@ -1,0 +1,12 @@
+1. Open the app (after ingress is ready and DNS/hosts point to your cluster):
+   http://{{ .Values.ingress.host }}/
+
+2. API is available at the same origin under /api/ (proxied by the frontend nginx to the backend).
+
+3. Update CORS for your browser origin if you see blocked requests — set corsOrigins in values to include
+   e.g. http://{{ .Values.ingress.host }}
+
+4. LinkedIn: run step1_get_token.py on your machine with the same credentials, then copy
+   LINKEDIN_ACCESS_TOKEN and LINKEDIN_PERSON_URN into the Kubernetes Secret (upgrade release or kubectl edit).
+
+5. Backend health: GET http://{{ include "linkedin-agent.backendServiceName" . }}.{{ .Release.Namespace }}:8000/api/health (in-cluster).

@@ -1,0 +1,79 @@
+# Build images locally, then set repositories/tags below:
+#   docker build -t linkedin-agent-backend:latest -f backend/Dockerfile.prod backend/
+#   docker build -t linkedin-agent-frontend:latest -f frontend/Dockerfile.prod frontend/
+# For kind/minikube: docker build ... && kind load docker-image linkedin-agent-backend:latest
+
+nameOverride: ""
+fullnameOverride: ""
+
+imageBackend:
+  repository: linkedin-agent-backend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imageFrontend:
+  repository: linkedin-agent-frontend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+backend:
+  replicaCount: 1
+  resources: {}
+  podAnnotations: {}
+
+frontend:
+  replicaCount: 1
+  resources: {}
+  podAnnotations: {}
+
+# CORS: prefer corsOriginsList (array) — avoids Helm --set issues with commas.
+# If corsOriginsList is empty, corsOrigins (string) is used instead.
+corsOriginsList:
+  - http://localhost:3000
+  - http://127.0.0.1:3000
+  - http://linkedin-agent.local
+corsOrigins: "http://localhost:3000,http://127.0.0.1:3000,http://linkedin-agent.local"
+
+# If set, the chart does NOT create templates/secret.yaml — mount your own Secret (same keys as envFrom).
+# Create first, then: helm install ... --set existingSecret=linkedin-agent-credentials
+#   kubectl create secret generic linkedin-agent-credentials -n linkedin \
+#     --from-literal=GEMINI_API_KEY=... \
+#     --from-literal=ANTHROPIC_API_KEY= \
+#     --from-literal=LINKEDIN_CLIENT_ID=... \
+#     --from-literal=LINKEDIN_CLIENT_SECRET=... \
+#     --from-literal=LINKEDIN_ACCESS_TOKEN= \
+#     --from-literal=LINKEDIN_PERSON_URN=
+existingSecret: ""
+
+secrets:
+  geminiApiKey: ""
+  anthropicApiKey: ""
+  linkedinClientId: ""
+  linkedinClientSecret: ""
+  linkedinAccessToken: ""
+  linkedinPersonUrn: ""
+
+serviceBackend:
+  type: ClusterIP
+  port: 8000
+
+serviceFrontend:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  # host used for the UI; /api is proxied by the frontend nginx to the backend service
+  host: linkedin-agent.local
+  # If empty, no TLS. Otherwise secret must exist in the namespace.
+  tlsSecretName: ""
+
+# LinkedIn OAuth redirect must exactly match an "Authorized redirect URL" in your LinkedIn app.
+# Use the same scheme/host as users use to open the UI (ingress host).
+linkedin:
+  oauthScheme: http
+  redirectPath: /api/linkedin/callback
+  successPath: "/?linkedin=connected"
+  errorPath: "/?linkedin_error=1"

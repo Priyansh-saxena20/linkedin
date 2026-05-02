@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "linkedin-agent.fullname" . }}-frontend
+  labels:
+    app.kubernetes.io/component: frontend
+    {{- include "linkedin-agent.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: frontend
+      {{- include "linkedin-agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.frontend.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        app.kubernetes.io/component: frontend
+        {{- include "linkedin-agent.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.imageFrontend.repository }}:{{ .Values.imageFrontend.tag }}"
+          imagePullPolicy: {{ .Values.imageFrontend.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: BACKEND_HOST
+              value: {{ include "linkedin-agent.backendHostForNginx" . | quote }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          {{- with .Values.frontend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

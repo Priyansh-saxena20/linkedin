@@ -1,0 +1,5 @@
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# Optional — only needed if you switch to Anthropic SDK style (not required, we use raw requests)
+# anthropic>=0.25.0

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "linkedin-agent.backendServiceName" . }}
+  labels:
+    app.kubernetes.io/component: backend
+    {{- include "linkedin-agent.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.serviceBackend.type }}
+  selector:
+    app.kubernetes.io/component: backend
+    {{- include "linkedin-agent.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.serviceBackend.port }}
+      targetPort: http
