@@ -291,6 +291,7 @@ Then open **http://localhost:8080** (exact Service name from `kubectl get svc`).
 | UI: backend offline | Wrong URL / proxy / CORS | Compose: both containers up; browser uses `localhost:3000`. K8s: Ingress or port-forward; `CORS_ORIGINS` includes browser origin. |
 | `ERR_CONNECTION_REFUSED` on ingress host | No listener on :80 | Install ingress controller; map host in `/etc/hosts`; or use port-forward. |
 | Post fails after OAuth | Missing scopes or expired token | Re-connect; verify LinkedIn app products. |
+| Generated post cuts off mid‑sentence | Model output cap (not LinkedIn) | Backend uses `maxOutputTokens` / `max_tokens` (4096). If you still see truncation, shorten the activity text; a warning is appended when the model reports `MAX_TOKENS` / `max_tokens`. |
 | Helm: “key http://localhost has no value” | Commas in `--set` | Use `corsOriginsList` / `-f` values file / `existingSecret` (see chart `values.yaml`). |
 
 ---
