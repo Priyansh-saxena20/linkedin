@@ -32,7 +32,22 @@ export async function refine(currentText, instruction) {
   return r.json()
 }
 
-export async function postToLinkedIn(text) {
+export async function postToLinkedIn(text, file) {
+  if (file) {
+    const fd = new FormData()
+    fd.append('text', text)
+    fd.append('media', file, file.name)
+    const r = await fetch(`${BASE}/post-to-linkedin`, {
+      method: 'POST',
+      body: fd
+    })
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}))
+      const d = err.detail
+      throw new Error(typeof d === 'string' ? d : JSON.stringify(d) || 'Post failed')
+    }
+    return r.json()
+  }
   const r = await fetch(`${BASE}/post-to-linkedin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

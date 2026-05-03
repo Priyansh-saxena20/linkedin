@@ -155,7 +155,7 @@ All routes below are rooted at **`/api`**.
 | GET | `/api/status` | UI status: AI provider, model label, `linkedin_connected`, `linkedin_oauth_ready`, `linkedin_urn`. |
 | POST | `/api/generate` | Body: `{ "mode", "input" }` → generated text. |
 | POST | `/api/refine` | Body: `{ "current_text", "instruction" }` → revised full text (iterative edits; draft kept in context). |
-| POST | `/api/post-to-linkedin` | Body: `{ "text" }` → creates a LinkedIn post. |
+| POST | `/api/post-to-linkedin` | **Text only:** JSON `{ "text" }`. **With image:** `multipart/form-data` fields `text` + `media` (JPEG/PNG/GIF/WEBP, max 8MB). Uses LinkedIn `registerUpload` + UGC `IMAGE`. Video upload not implemented. |
 | GET | `/api/linkedin/start` | Starts OAuth (302 to LinkedIn). Returns 503 if client id/secret not configured. |
 | GET | `/api/linkedin/callback` | LinkedIn redirect target; exchanges code; persists token; 302 to success/error URL. |
 

@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useId } from 'react'
 import { postToLinkedIn, refine } from '../hooks/useApi'
 import VoiceDictationButton from './VoiceDictationButton'
 
+const MAX_IMAGE_MB = 8
+
 export default function OutputPanel({ result, mode, onResultChange }) {
+  const fileInputId = useId()
   const [posting, setPosting] = useState(false)
   const [posted, setPosted] = useState(false)
   const [postError, setPostError] = useState(null)
@@ -10,11 +13,24 @@ export default function OutputPanel({ result, mode, onResultChange }) {
   const [refineInput, setRefineInput] = useState('')
   const [refining, setRefining] = useState(false)
   const [refineError, setRefineError] = useState(null)
+  const [mediaFile, setMediaFile] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null)
 
   useEffect(() => {
     setPosted(false)
     setPostError(null)
+    setMediaFile(null)
   }, [result])
+
+  useEffect(() => {
+    if (!mediaFile) {
+      setPreviewUrl(null)
+      return undefined
+    }
+    const u = URL.createObjectURL(mediaFile)
+    setPreviewUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [mediaFile])
 
   const copy = () => {
     navigator.clipboard.writeText(result)
@@ -22,12 +38,29 @@ export default function OutputPanel({ result, mode, onResultChange }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const onPickMedia = (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    if (!/^image\/(jpeg|png|gif|webp)$/i.test(f.type)) {
+      setPostError('Please choose a JPEG, PNG, GIF, or WEBP image.')
+      return
+    }
+    if (f.size > MAX_IMAGE_MB * 1024 * 1024) {
+      setPostError(`Image must be under ${MAX_IMAGE_MB} MB.`)
+      return
+    }
+    setPostError(null)
+    setMediaFile(f)
+  }
+
   const post = async () => {
     setPosting(true)
     setPostError(null)
     try {
-      await postToLinkedIn(result)
+      await postToLinkedIn(result, mediaFile || undefined)
       setPosted(true)
+      setMediaFile(null)
     } catch (e) {
       setPostError(e.message)
     } finally {
@@ -118,6 +151,70 @@ export default function OutputPanel({ result, mode, onResultChange }) {
       }}>
         {result}
       </div>
+
+      {canPost && !posted && (
+        <div style={{
+          borderTop: '1px solid var(--border)',
+          padding: '12px 16px',
+          background: 'var(--bg-card)',
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: 0.3 }}>
+            Optional image with this post — JPEG, PNG, GIF, or WEBP (max {MAX_IMAGE_MB} MB). Video files are not supported yet.
+          </div>
+          <input
+            id={fileInputId}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            style={{ display: 'none' }}
+            onChange={onPickMedia}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <label
+              htmlFor={fileInputId}
+              style={{
+                fontSize: 11,
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-bright)',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-elevated)',
+              }}
+            >
+              + attach image
+            </label>
+            {mediaFile && (
+              <>
+                {previewUrl && (
+                  <img
+                    src={previewUrl}
+                    alt=""
+                    style={{ maxHeight: 56, maxWidth: 100, borderRadius: 6, border: '1px solid var(--border)' }}
+                  />
+                )}
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {mediaFile.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMediaFile(null)}
+                  style={{
+                    fontSize: 11,
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--red)',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                >
+                  remove
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {showRefine && (
         <div style={{

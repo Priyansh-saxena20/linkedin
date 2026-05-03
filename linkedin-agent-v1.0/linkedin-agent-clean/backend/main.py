@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, APIRouter
+from fastapi import FastAPI, HTTPException, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import json
+import mimetypes
 import requests
 import os
 import secrets
@@ -343,6 +344,93 @@ Job Description:
     raise HTTPException(status_code=400, detail=f"Unknown mode: {mode}")
 
 
+# ── LinkedIn image post (feed share) ─────────────────────────────────
+MAX_LINKEDIN_IMAGE_BYTES = 8 * 1024 * 1024
+ALLOWED_LINKEDIN_IMAGE_TYPES = frozenset(
+    {"image/jpeg", "image/png", "image/gif", "image/webp"}
+)
+
+
+def _linkedin_json_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {LINKEDIN_TOKEN}",
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
+    }
+
+
+def _linkedin_register_feedshare_image(owner_urn: str) -> tuple[str, str, dict]:
+    """registerUpload → (upload_url, asset_urn, upload_mechanism_headers)."""
+    url = "https://api.linkedin.com/v2/assets?action=registerUpload"
+    body = {
+        "registerUploadRequest": {
+            "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+            "owner": owner_urn,
+            "serviceRelationships": [
+                {
+                    "relationshipType": "OWNER",
+                    "identifier": "urn:li:userGeneratedContent",
+                }
+            ],
+        }
+    }
+    r = requests.post(url, headers=_linkedin_json_headers(), json=body, timeout=60)
+    if r.status_code not in (200, 201):
+        raise HTTPException(
+            status_code=502,
+            detail=f"LinkedIn registerUpload failed: {r.status_code} {r.text[:800]}",
+        )
+    data = r.json()
+    val = data.get("value") or data
+    um = val.get("uploadMechanism") or {}
+    inner = um.get("com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest") or um
+    upload_url = inner.get("uploadUrl")
+    asset_urn = val.get("asset")
+    extra_headers = inner.get("headers") or {}
+    if not upload_url or not asset_urn:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unexpected registerUpload response keys: {list(data.keys())}",
+        )
+    return str(upload_url), str(asset_urn), extra_headers
+
+
+def _linkedin_put_upload(upload_url: str, raw: bytes, content_type: str, extra_headers: dict) -> None:
+    uh = {str(k): str(v) for k, v in extra_headers.items()}
+    uh["Content-Type"] = content_type
+    uh["Authorization"] = f"Bearer {LINKEDIN_TOKEN}"
+    resp = requests.put(upload_url, headers=uh, data=raw, timeout=120)
+    if resp.status_code not in (200, 201, 204):
+        raise HTTPException(
+            status_code=502,
+            detail=f"LinkedIn image upload failed: {resp.status_code} {resp.text[:600]}",
+        )
+
+
+def _linkedin_publish_ugc(text: str, category: str, media: Optional[list]) -> dict:
+    share: dict = {
+        "shareCommentary": {"text": text},
+        "shareMediaCategory": category,
+    }
+    if media:
+        share["media"] = media
+    payload = {
+        "author": LINKEDIN_PERSON_URN,
+        "lifecycleState": "PUBLISHED",
+        "specificContent": {"com.linkedin.ugc.ShareContent": share},
+        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+    }
+    r = requests.post(
+        "https://api.linkedin.com/v2/ugcPosts",
+        headers=_linkedin_json_headers(),
+        json=payload,
+        timeout=60,
+    )
+    if r.status_code == 201:
+        return {"success": True, "posted_at": datetime.now().isoformat(), "with_media": bool(media)}
+    raise HTTPException(status_code=502, detail=f"LinkedIn post failed: {r.text[:1200]}")
+
+
 def build_refine_prompt(current_text: str, instruction: str) -> str:
     """Iterative edit: model sees full prior draft + user follow-up (ChatGPT-style)."""
     return f"""You are revising assistant output for Priyansh's LinkedIn AI agent.
@@ -398,7 +486,8 @@ def refine(req: RefineRequest):
 
 
 @api.post("/post-to-linkedin")
-def post_to_linkedin(req: PostRequest):
+async def post_to_linkedin(request: Request):
+    """Text-only: JSON `{"text":"..."}`. With image: `multipart/form-data` fields `text` + `media` (JPEG/PNG/GIF/WEBP, max 8MB)."""
     if not LINKEDIN_TOKEN:
         raise HTTPException(
             status_code=400,
@@ -407,26 +496,48 @@ def post_to_linkedin(req: PostRequest):
     if not LINKEDIN_PERSON_URN:
         raise HTTPException(status_code=400, detail="LinkedIn URN not configured.")
 
-    headers = {
-        "Authorization": f"Bearer {LINKEDIN_TOKEN}",
-        "Content-Type": "application/json",
-        "X-Restli-Protocol-Version": "2.0.0"
-    }
-    payload = {
-        "author": LINKEDIN_PERSON_URN,
-        "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.ShareContent": {
-                "shareCommentary": {"text": req.text},
-                "shareMediaCategory": "NONE"
-            }
-        },
-        "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"}
-    }
-    r = requests.post("https://api.linkedin.com/v2/ugcPosts", headers=headers, json=payload)
-    if r.status_code == 201:
-        return {"success": True, "posted_at": datetime.now().isoformat()}
-    raise HTTPException(status_code=502, detail=f"LinkedIn post failed: {r.text}")
+    ct = (request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" in ct:
+        form = await request.form()
+        text_field = form.get("text")
+        if text_field is None:
+            raise HTTPException(status_code=400, detail="Form field 'text' is required")
+        text_str = str(text_field).strip()
+        if not text_str:
+            raise HTTPException(status_code=400, detail="text is empty")
+        up = form.get("media")
+        fname = getattr(up, "filename", None) if up is not None else None
+        if not fname:
+            return _linkedin_publish_ugc(text_str, "NONE", None)
+        raw = await up.read()
+        if len(raw) > MAX_LINKEDIN_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image too large (max {MAX_LINKEDIN_IMAGE_BYTES // (1024 * 1024)} MB)",
+            )
+        mime = getattr(up, "content_type", None) or mimetypes.guess_type(fname)[0] or ""
+        mime = mime.split(";")[0].strip().lower() or "application/octet-stream"
+        if mime not in ALLOWED_LINKEDIN_IMAGE_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unsupported file type '{mime}'. "
+                    "Use JPEG, PNG, GIF, or WEBP. Native video upload is not implemented yet."
+                ),
+            )
+        upload_url, asset_urn, extra = _linkedin_register_feedshare_image(LINKEDIN_PERSON_URN)
+        _linkedin_put_upload(upload_url, raw, mime, extra)
+        media_items = [{"status": "READY", "media": asset_urn}]
+        return _linkedin_publish_ugc(text_str, "IMAGE", media_items)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Expected JSON body {text} or multipart form")
+    req = PostRequest(**body)
+    if not req.text or not req.text.strip():
+        raise HTTPException(status_code=400, detail="text is empty")
+    return _linkedin_publish_ugc(req.text.strip(), "NONE", None)
 
 
 @api.get("/status")
