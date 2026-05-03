@@ -156,7 +156,7 @@ We're looking for a DevOps Engineer to join our Platform team...
         </div>
       )}
 
-      {result && <OutputPanel result={result} mode="job" />}
+      {result && <OutputPanel result={result} mode="job" onResultChange={setResult} />}
     </div>
   )
 }

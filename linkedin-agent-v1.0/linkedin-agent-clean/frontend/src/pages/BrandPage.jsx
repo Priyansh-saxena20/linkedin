@@ -117,7 +117,7 @@ export default function BrandPage() {
         </div>
       )}
 
-      {result && <OutputPanel result={result} mode="brand" />}
+      {result && <OutputPanel result={result} mode="brand" onResultChange={setResult} />}
     </div>
   )
 }

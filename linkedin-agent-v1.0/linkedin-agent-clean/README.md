@@ -154,6 +154,7 @@ All routes below are rooted at **`/api`**.
 | GET | `/api/health` | Liveness: `status`, `provider`, `linkedin_connected`. |
 | GET | `/api/status` | UI status: AI provider, model label, `linkedin_connected`, `linkedin_oauth_ready`, `linkedin_urn`. |
 | POST | `/api/generate` | Body: `{ "mode", "input" }` → generated text. |
+| POST | `/api/refine` | Body: `{ "current_text", "instruction" }` → revised full text (iterative edits; draft kept in context). |
 | POST | `/api/post-to-linkedin` | Body: `{ "text" }` → creates a LinkedIn post. |
 | GET | `/api/linkedin/start` | Starts OAuth (302 to LinkedIn). Returns 503 if client id/secret not configured. |
 | GET | `/api/linkedin/callback` | LinkedIn redirect target; exchanges code; persists token; 302 to success/error URL. |

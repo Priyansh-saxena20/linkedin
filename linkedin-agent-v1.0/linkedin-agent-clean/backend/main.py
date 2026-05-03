@@ -279,6 +279,12 @@ class GenerateRequest(BaseModel):
 class PostRequest(BaseModel):
     text: str
 
+
+class RefineRequest(BaseModel):
+    current_text: str
+    instruction: str
+
+
 # ── PROMPT BUILDERS ───────────────────────────────────────
 def build_prompt(mode: str, user_input: str) -> str:
     if mode == "content":
@@ -336,6 +342,27 @@ Job Description:
 
     raise HTTPException(status_code=400, detail=f"Unknown mode: {mode}")
 
+
+def build_refine_prompt(current_text: str, instruction: str) -> str:
+    """Iterative edit: model sees full prior draft + user follow-up (ChatGPT-style)."""
+    return f"""You are revising assistant output for Priyansh's LinkedIn AI agent.
+
+CURRENT DRAFT (treat as the source of truth for facts — do not invent employers, metrics, or events):
+---
+{current_text}
+---
+
+USER'S FOLLOW-UP / EDIT REQUEST:
+{instruction}
+
+Instructions:
+- Return ONLY the complete updated draft as plain text (no markdown fences, no preamble like "Here is the revised version").
+- Preserve factual accuracy unless the user explicitly asks to change facts.
+- Honor requests about length, tone, emojis, hashtags, hooks, or structure.
+- If the draft ends with a line like "— Posted by Priyansh's Personal AI Agent 🤖", keep that as the final line unless the user asked to remove or change it.
+"""
+
+
 # ── ROUTES (all under /api for Docker proxy + Kubernetes ingress) ──
 api = APIRouter(prefix="/api")
 
@@ -356,6 +383,18 @@ def generate(req: GenerateRequest):
     prompt = build_prompt(req.mode, req.input)
     result = ask_ai(prompt)
     return {"result": result, "mode": req.mode}
+
+
+@api.post("/refine")
+def refine(req: RefineRequest):
+    """Apply a natural-language edit to the last generated output; keeps prior draft in context."""
+    if not req.current_text.strip():
+        raise HTTPException(status_code=400, detail="current_text is empty")
+    if not req.instruction.strip():
+        raise HTTPException(status_code=400, detail="instruction is empty")
+    prompt = build_refine_prompt(req.current_text.strip(), req.instruction.strip())
+    text = ask_ai(prompt)
+    return {"result": text}
 
 
 @api.post("/post-to-linkedin")

@@ -138,7 +138,7 @@ export default function ContentPage() {
       )}
 
       {/* Result */}
-      {result && <OutputPanel result={result} mode="content" />}
+      {result && <OutputPanel result={result} mode="content" onResultChange={setResult} />}
     </div>
   )
 }
